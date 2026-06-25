@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "serverless-api-gateway"
+s3_bucket = ""  # Set during first `sam deploy --guided`
+s3_prefix = "serverless-api-gateway"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = false
+image_repositories = []

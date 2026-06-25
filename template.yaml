@@ -1,0 +1,395 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Serverless API Gateway — Scalable CRUD API with DynamoDB and rate-limiting
+
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+    Description: API Gateway stage name
+  RateLimitCapacity:
+    Type: Number
+    Default: 20
+    Description: Token-bucket capacity (max burst tokens)
+  RateLimitRefillRate:
+    Type: Number
+    Default: 10
+    Description: Token-bucket refill rate (tokens per second)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 256
+    Timeout: 10
+    Environment:
+      Variables:
+        ITEMS_TABLE: !Ref ItemsTable
+        RATE_LIMIT_TABLE: !Ref RateLimitTable
+        RATE_LIMIT_CAPACITY: !Ref RateLimitCapacity
+        RATE_LIMIT_REFILL_RATE: !Ref RateLimitRefillRate
+        POWERTOOLS_SERVICE_NAME: api-gateway
+        POWERTOOLS_LOG_LEVEL: INFO
+        NODE_OPTIONS: '--enable-source-maps'
+
+Resources:
+  # ──────────────────────────────────────────────
+  # DynamoDB Tables
+  # ──────────────────────────────────────────────
+  ItemsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${StageName}-ItemsTable'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      AttributeDefinitions:
+        - AttributeName: itemId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: itemId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: CategoryIndex
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  RateLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${StageName}-RateLimitTable'
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      AttributeDefinitions:
+        - AttributeName: identifier
+          AttributeType: S
+      KeySchema:
+        - AttributeName: identifier
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # ──────────────────────────────────────────────
+  # Lambda Functions
+  # ──────────────────────────────────────────────
+  CreateItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/createItem.handler
+      CodeUri: ./src
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
+      Events:
+        CreateItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Method: POST
+            Path: /items
+
+  GetItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/getItem.handler
+      CodeUri: ./src
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
+      Events:
+        GetItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Method: GET
+            Path: /items/{itemId}
+
+  ListItemsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/listItems.handler
+      CodeUri: ./src
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
+      Events:
+        ListItems:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Method: GET
+            Path: /items
+
+  UpdateItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/updateItem.handler
+      CodeUri: ./src
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
+      Events:
+        UpdateItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Method: PUT
+            Path: /items/{itemId}
+
+  DeleteItemFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/deleteItem.handler
+      CodeUri: ./src
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ItemsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RateLimitTable
+      Events:
+        DeleteItem:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Method: DELETE
+            Path: /items/{itemId}
+
+  # ──────────────────────────────────────────────
+  # API Gateway
+  # ──────────────────────────────────────────────
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref StageName
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingBurstLimit: 100
+          ThrottlingRateLimit: 50
+          LoggingLevel: INFO
+          MetricsEnabled: true
+
+  # ──────────────────────────────────────────────
+  # API Gateway Usage Plan + API Key (coarse rate limiting)
+  # ──────────────────────────────────────────────
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub '${StageName}-api-usage-plan'
+      Description: Rate limiting via API Gateway usage plans
+      ApiStages:
+        - ApiId: !Ref ApiGateway
+          Stage: !Ref StageName
+      Quota:
+        Limit: 1000
+        Period: DAY
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 50
+
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub '${StageName}-api-key'
+      Description: API Key for rate-limited access
+      Enabled: true
+
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+
+  # ──────────────────────────────────────────────
+  # CloudWatch Log Groups
+  # ──────────────────────────────────────────────
+  CreateItemLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${CreateItemFunction}'
+      RetentionInDays: 14
+
+  GetItemLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${GetItemFunction}'
+      RetentionInDays: 14
+
+  ListItemsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ListItemsFunction}'
+      RetentionInDays: 14
+
+  UpdateItemLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${UpdateItemFunction}'
+      RetentionInDays: 14
+
+  DeleteItemLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${DeleteItemFunction}'
+      RetentionInDays: 14
+
+  HealthCheckLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${HealthCheckFunction}'
+      RetentionInDays: 7
+
+  # ──────────────────────────────────────────────
+  # Health Check Function
+  # ──────────────────────────────────────────────
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/healthCheck.handler
+      CodeUri: ./src
+      MemorySize: 128
+      Timeout: 5
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Method: GET
+            Path: /health
+
+  # ──────────────────────────────────────────────
+  # CloudWatch Alarms
+  # ──────────────────────────────────────────────
+  CreateItemErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StageName}-create-item-errors'
+      AlarmDescription: CreateItem function error rate
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CreateItemFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  CreateItemLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StageName}-create-item-latency'
+      AlarmDescription: CreateItem function p95 latency
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CreateItemFunction
+      Statistic: Maximum
+      ExtendedStatistics:
+        - p95
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  UpdateItemErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StageName}-update-item-errors'
+      AlarmDescription: UpdateItem function error rate
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref UpdateItemFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  ApiGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StageName}-api-4xx-errors'
+      AlarmDescription: API Gateway 4XX error rate
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  ApiGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${StageName}-api-5xx-errors'
+      AlarmDescription: API Gateway 5XX error rate
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiEndpoint:
+    Description: URL of the API Gateway endpoint
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/'
+  ApiKeyId:
+    Description: API Key ID (use to retrieve the key value via AWS Console)
+    Value: !Ref ApiKey
+  ItemsTableName:
+    Description: Name of the DynamoDB Items table
+    Value: !Ref ItemsTable
+  RateLimitTableName:
+    Description: Name of the DynamoDB Rate Limit table
+    Value: !Ref RateLimitTable

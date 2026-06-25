@@ -1,0 +1,15 @@
+{
+  "httpMethod": "GET",
+  "path": "/items",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "queryStringParameters": {
+    "status": "active"
+  },
+  "requestContext": {
+    "identity": {
+      "sourceIp": "127.0.0.1"
+    }
+  }
+}

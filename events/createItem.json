@@ -1,0 +1,13 @@
+{
+  "httpMethod": "POST",
+  "path": "/items",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"name\":\"Test Item\",\"description\":\"A test item for SAM Local\",\"category\":\"electronics\",\"status\":\"active\"}",
+  "requestContext": {
+    "identity": {
+      "sourceIp": "127.0.0.1"
+    }
+  }
+}

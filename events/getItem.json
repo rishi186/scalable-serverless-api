@@ -1,0 +1,15 @@
+{
+  "httpMethod": "GET",
+  "path": "/items/abc-123",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "pathParameters": {
+    "itemId": "abc-123"
+  },
+  "requestContext": {
+    "identity": {
+      "sourceIp": "127.0.0.1"
+    }
+  }
+}

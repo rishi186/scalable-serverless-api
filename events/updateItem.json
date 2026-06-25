@@ -1,0 +1,16 @@
+{
+  "httpMethod": "PUT",
+  "path": "/items/abc-123",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "pathParameters": {
+    "itemId": "abc-123"
+  },
+  "body": "{\"name\":\"Updated Item\",\"status\":\"inactive\"}",
+  "requestContext": {
+    "identity": {
+      "sourceIp": "127.0.0.1"
+    }
+  }
+}

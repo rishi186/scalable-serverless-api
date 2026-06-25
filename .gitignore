@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+.aws-sam/
+*.tsbuildinfo
+
+# Coverage
+coverage/
+
+# Environment
+env.json
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AWS
+*.pem

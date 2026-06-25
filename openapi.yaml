@@ -1,0 +1,347 @@
+openapi: 3.0.3
+info:
+  title: Serverless API Gateway
+  description: |
+    A production-grade serverless CRUD API built with AWS SAM, TypeScript,
+    DynamoDB, and multi-layer rate-limiting.
+  version: 1.0.0
+  contact:
+    name: API Support
+    url: https://github.com/your-repo/serverless-api-gateway
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    variables:
+      apiId:
+        description: API Gateway ID
+        default: abc123
+      region:
+        description: AWS Region
+        default: us-east-1
+      stage:
+        description: Deployment stage
+        default: prod
+  - url: http://localhost:3000
+    description: Local development server
+
+tags:
+  - name: Items
+    description: CRUD operations for items
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service health status. Not rate-limited.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /items:
+    get:
+      tags: [Items]
+      summary: List items
+      description: |
+        Returns a paginated list of items. Supports filtering by status
+        or category via query parameters. Use `nextKey` for pagination.
+      operationId: listItems
+      parameters:
+        - name: status
+          in: query
+          description: Filter by status
+          schema:
+            type: string
+            enum: [active, inactive, archived]
+        - name: category
+          in: query
+          description: Filter by category
+          schema:
+            type: string
+        - name: lastKey
+          in: query
+          description: Base64-encoded pagination key from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemListResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags: [Items]
+      summary: Create item
+      description: Creates a new item with a generated UUID.
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateItemRequest'
+      responses:
+        '201':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /items/{itemId}:
+    get:
+      tags: [Items]
+      summary: Get item
+      description: Retrieves a single item by ID.
+      operationId: getItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags: [Items]
+      summary: Update item
+      description: Partially updates an item. At least one field must be provided.
+      operationId: updateItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemRequest'
+      responses:
+        '200':
+          description: Item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags: [Items]
+      summary: Delete item
+      description: Deletes an item by ID.
+      operationId: deleteItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Item deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        service:
+          type: string
+          example: serverless-api-gateway
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: 1.0.0
+
+    Item:
+      type: object
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive, archived]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateItemRequest:
+      type: object
+      required: [name, description, category]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        category:
+          type: string
+          minLength: 1
+          maxLength: 100
+        status:
+          type: string
+          enum: [active, inactive, archived]
+          default: active
+
+    UpdateItemRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        category:
+          type: string
+          minLength: 1
+          maxLength: 100
+        status:
+          type: string
+          enum: [active, inactive, archived]
+
+    ItemListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        count:
+          type: integer
+        nextKey:
+          type: string
+          description: Base64-encoded key for next page (omitted if no more results)
+
+    DeleteResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Item deleted successfully
+        itemId:
+          type: string
+          format: uuid
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+    RateLimitResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Rate limit exceeded. Please retry after the specified delay.
+        retryAfter:
+          type: integer
+          description: Seconds to wait before retrying
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RateLimitResponse'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
