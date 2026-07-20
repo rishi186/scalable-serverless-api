@@ -1,5 +1,6 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { Logger } from '@aws-lambda-powertools/logger';
+import { v4 as uuidv4 } from 'uuid';
 
 const logger = new Logger({ serviceName: 'correlation-id' });
 
@@ -16,7 +17,6 @@ function getCorrelationId(event: APIGatewayProxyEvent): string {
   const requestId = event.requestContext?.requestId;
   if (requestId) return requestId;
 
-  const { v4: uuidv4 } = require('uuid');
   return uuidv4();
 }
 
