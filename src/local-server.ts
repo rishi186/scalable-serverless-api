@@ -1,4 +1,5 @@
 import express from 'express';
+import * as dynamoClientModule from './lib/dynamoClient';
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import {
   DynamoDBDocumentClient,
@@ -185,7 +186,6 @@ process.env.AWS_SECRET_ACCESS_KEY = 'local';
 process.env.AWS_REGION = 'us-east-1';
 
 // Patch the docClient singleton used by handlers
-const dynamoClientModule = require('./lib/dynamoClient');
 dynamoClientModule.docClient = inMemoryClient;
 
 // ─── Express server ───────────────────────────────────────────────────────
