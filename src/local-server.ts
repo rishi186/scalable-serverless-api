@@ -1,5 +1,5 @@
 import express from 'express';
-import * as dynamoClientModule from './lib/dynamoClient';
+import dynamoClientModule = require('./lib/dynamoClient');
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import {
   DynamoDBDocumentClient,
