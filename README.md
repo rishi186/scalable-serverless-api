@@ -1,5 +1,7 @@
 # Serverless API Gateway
 
+![Node.js](https://img.shields.io/badge/node-20.x-339933?logo=node.js&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white) ![AWS SAM](https://img.shields.io/badge/AWS%20SAM-IaC-FF9900?logo=amazonaws&logoColor=white) ![DynamoDB](https://img.shields.io/badge/DynamoDB-on--demand-4053D6?logo=amazondynamodb&logoColor=white) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![CI](https://github.com/rishi186/scalable-serverless-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/rishi186/scalable-serverless-api/actions/workflows/ci-cd.yml)
+
 A production-grade serverless CRUD API built with **AWS SAM**, **TypeScript**, **DynamoDB**, and **multi-layer rate-limiting**.
 
 ## Production Features
